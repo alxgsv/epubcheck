@@ -25,6 +25,11 @@
         <file>
             <source>${project.build.directory}/${artifact.artifactId}.jar</source>
         </file>
+        <file>
+            <source>src/main/assembly/bin/epubcheck</source>
+            <outputDirectory>bin</outputDirectory>
+            <fileMode>0755</fileMode>
+        </file>
     </files>
     <fileSets>
         <fileSet>

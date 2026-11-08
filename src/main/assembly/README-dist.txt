@@ -15,10 +15,15 @@ EPUBCheck project home: https://github.com/w3c/epubcheck
 RUNNING
 -------
 
-To run the tool you need a Java runtime (1.7 or above).
+To run the tool you need a Java runtime (8 or above).
 Any Operating System should do.
 
-Run it from the command line:
+Run it from the command line with the launcher (Linux and macOS), which
+finds the jar next to it:
+
+>  bin/epubcheck file.epub
+
+Or call the jar directly on any operating system:
 
 >  java -jar epubcheck.jar file.epub
 

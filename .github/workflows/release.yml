@@ -1,0 +1,108 @@
+name: release
+
+# Publish a build for every push to main.
+#
+# There are no version tags: each build is released under a technical
+# `build-<12-char-commit>` tag, and the assets are named after the commit.
+# That keeps the pom (and `epubcheck --version`) at whatever upstream main
+# says, and can never collide with a w3c release tag or asset.
+#
+# Assets: epubcheck-alxgsv-<sha12>.tar.gz (jar, lib/, bin/epubcheck,
+# BUILD-INFO.txt) and SHA256SUMS. A JRE is required on the host; the archive
+# is identical on Linux and macOS.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: "Build and publish EPUBCheck"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout sources"
+        uses: actions/checkout@v4
+
+      - name: "Set up Java"
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: "temurin"
+          cache: 'maven'
+
+      - name: "Build and test"
+        run: mvn --batch-mode --no-transfer-progress verify
+
+      - name: "Stage the distribution"
+        id: build
+        run: |
+          set -euo pipefail
+
+          version=$(mvn --batch-mode --no-transfer-progress --quiet help:evaluate \
+            -Dexpression=project.version -DforceStdout | tail -n 1)
+          sha=${GITHUB_SHA:0:12}
+          name="epubcheck-alxgsv-${sha}"
+          archive="target/epubcheck-${version}.zip"
+
+          if [[ ! -f "$archive" ]]; then
+            echo "::error::missing ${archive}"
+            ls -l target
+            exit 1
+          fi
+
+          rm -rf dist
+          unzip -q "$archive" -d dist
+          test -d "dist/epubcheck-${version}"
+          mv "dist/epubcheck-${version}" "dist/${name}"
+          chmod +x "dist/${name}/bin/epubcheck"
+
+          cat > "dist/${name}/BUILD-INFO.txt" <<EOF
+          EPUBCheck fork build
+          commit: ${GITHUB_SHA}
+          commit url: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}
+          ref: ${GITHUB_REF_NAME}
+          pom version: ${version}
+          built: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+
+          tar -C dist -czf "${name}.tar.gz" "${name}"
+          sha256sum "${name}.tar.gz" > SHA256SUMS
+
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "tag=build-${sha}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: "Publish the GitHub release"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ steps.build.outputs.name }}
+          TAG: ${{ steps.build.outputs.tag }}
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          cat > release-notes.md <<EOF
+          Continuous build of \`${GITHUB_SHA}\` from \`${GITHUB_REF_NAME}\`.
+
+          - pom version: \`${VERSION}\`
+          - commit: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}
+          - workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+
+          assets=("${NAME}.tar.gz" "SHA256SUMS")
+
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" "${assets[@]}" \
+              --title "Build ${TAG#build-}" --notes-file release-notes.md
+          fi

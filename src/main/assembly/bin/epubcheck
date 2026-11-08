@@ -1,0 +1,15 @@
+#!/bin/sh
+# Run EPUBCheck from this distribution.
+# Works on Linux and macOS; the jar and its lib/ directory are platform independent.
+
+set -eu
+
+EPUBCHECK_HOME=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+if [ -n "${JAVA_HOME:-}" ]; then
+  JAVA="$JAVA_HOME/bin/java"
+else
+  JAVA=java
+fi
+
+exec "$JAVA" -jar "$EPUBCHECK_HOME/epubcheck.jar" "$@"
